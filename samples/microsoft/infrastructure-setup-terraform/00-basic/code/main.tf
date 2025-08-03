@@ -9,6 +9,43 @@ resource "random_string" "unique" {
   upper       = false
 }
 
+## Create a storage account for Terraform state
+##
+resource "azurerm_storage_account" "tfstate" {
+  name                     = "tfstate${random_string.unique.result}"
+  resource_group_name      = azurerm_resource_group.rg.name
+  location                 = var.location
+  account_tier             = "Standard"
+  account_replication_type = "LRS"
+  min_tls_version         = "TLS1_2"
+
+  tags = {
+    environment = "development"
+    project     = "aifoundry"
+  }
+}
+
+## Create container for Terraform state
+##
+resource "azurerm_storage_container" "tfstate" {
+  name                  = "tfstate"
+  storage_account_name  = azurerm_storage_account.tfstate.name
+  container_access_type = "private"
+}
+
+## Create user-assigned managed identity
+##
+resource "azurerm_user_assigned_identity" "project_identity" {
+  name                = "id-aifoundry${random_string.unique.result}"
+  resource_group_name = azurerm_resource_group.rg.name
+  location           = var.location
+
+  tags = {
+    environment = "development"
+    project     = "aifoundry"
+  }
+}
+
 ## Create a resource group for the resources to be stored in
 ##
 resource "azurerm_resource_group" "rg" {
@@ -22,7 +59,7 @@ resource "azurerm_resource_group" "rg" {
 ## Create the AI Foundry resource
 ##
 resource "azapi_resource" "ai_foundry" {
-  type                      = "Microsoft.CognitiveServices/accounts@2025-06-01"
+  type                      = "Microsoft.CognitiveServices/accounts@2023-05-01"
   name                      = "aifoundry${random_string.unique.result}"
   parent_id                 = azurerm_resource_group.rg.id
   location                  = var.location
@@ -34,21 +71,20 @@ resource "azapi_resource" "ai_foundry" {
       name = "S0"
     }
     identity = {
-      type = "SystemAssigned"
+      type = "UserAssigned"
+      userAssignedIdentities = {
+        "${azurerm_user_assigned_identity.project_identity.id}" = {}
+      }
     }
-
     properties = {
-      # Support both Entra ID and API Key authentication for Cognitive Services account
       disableLocalAuth = false
-
-      # Specifies that this is an AI Foundry resourceyes
       allowProjectManagement = true
-
-      # Set custom subdomain name for DNS names created for this Foundry resource
       customSubDomainName = "aifoundry${random_string.unique.result}"
     }
   }
 }
+  
+
 
 ## Create a deployment for OpenAI's GPT-4o in the AI Foundry resource
 ##
@@ -61,7 +97,7 @@ resource "azurerm_cognitive_deployment" "aifoundry_deployment_gpt_4o" {
   cognitive_account_id = azapi_resource.ai_foundry.id
 
   sku {
-    name     = "GlobalStandard"
+    name     = "Standard"
     capacity = 1
   }
 
@@ -75,23 +111,34 @@ resource "azurerm_cognitive_deployment" "aifoundry_deployment_gpt_4o" {
 ## Create AI Foundry project
 ##
 resource "azapi_resource" "ai_foundry_project" {
-  type                      = "Microsoft.CognitiveServices/accounts/projects@2025-06-01"
+  type                      = "Microsoft.CognitiveServices/accounts/projects@2023-10-01-preview"
   name                      = "project${random_string.unique.result}"
   parent_id                 = azapi_resource.ai_foundry.id
   location                  = var.location
   schema_validation_enabled = false
 
   body = {
-    sku = {
-      name = "S0"
-    }
-    identity = {
-      type = "SystemAssigned"
-    }
-
     properties = {
       displayName = "project"
       description = "My first project"
+      settings = {
+        defaultDeploymentName = "gpt-4o"
+      }
     }
+  }
+}
+## Create Azure AI Search service
+##
+resource "azurerm_search_service" "search" {
+  name                = "search${random_string.unique.result}"
+  resource_group_name = azurerm_resource_group.rg.name
+  location            = var.location
+  sku                = "free"
+  replica_count      = 1
+  partition_count    = 1
+
+  tags = {
+    environment = "development"
+    project     = "aifoundry"
   }
 }

@@ -24,14 +24,16 @@ USAGE:
 from dotenv import load_dotenv
 load_dotenv()  # Load environment variables from a .env file
 
+import os
+
 ## - pre-reqs: install openai and azure-ai-projects packages
 ##   pip install openai azure-ai-projects azure-identity
 ## - deploy a gpt-4o model
 
 ## <chat_completion>
-from azure.ai.projects.onedp import AIProjectClient
+from azure.ai.projects import AIProjectClient
 from azure.identity import DefaultAzureCredential
-from azure.ai.projects import FileSearchTool
+from azure.ai.projects.models import FileSearchTool
 
 # Initialize the AIProjectClient with endpoint and credentials
 project_client = AIProjectClient(
